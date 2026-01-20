@@ -15,8 +15,8 @@ from telegram.ext import (
     filters
 )
 
-TOKEN = os.getenv("8346475214:AAF61SD2ElIb97ceq4IxO34mfxYaiGEoR5c")
-ADMIN_ID = int(os.getenv("7827164632"))
+TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID = int(os.getenv("ADMIN_ID"))
 
 MENU = {
     "🍔 Burger": 30000,
