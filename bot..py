@@ -2,217 +2,169 @@ import os
 from telegram import (
     Update,
     ReplyKeyboardMarkup,
-    KeyboardButton
+    KeyboardButton,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup
 )
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     MessageHandler,
+    CallbackQueryHandler,
     ContextTypes,
     filters
 )
 
-# ================== SOZLAMALAR ==================
 TOKEN = os.getenv("8346475214:AAF61SD2ElIb97ceq4IxO34mfxYaiGEoR5c")
 ADMIN_ID = int(os.getenv("7827164632"))
 
-# ================== MENU ==================
 MENU = {
-    "🌯 LAVASH": 33000,
-    "🍔 NON BURGER": 35000,
-    "🌭 XOT-DOG": 20000,
-    "☕️ KOFE": 15000,
-    "🥤 COCA COLA": 10000,
-    "🥤 PEPSI": 10000,
-    "🥤 FANTA": 10000,
-    "🍗 TANDIR TOVUQ": 50000,
-    "🍗 KEFSI": 40000
+    "🍔 Burger": 30000,
+    "🌯 Lavash": 33000,
+    "🌭 Hot-dog": 20000,
+    "🍗 Tovuq": 45000,
+    "🥤 Cola": 10000
 }
 
 users = {}
-orders = []
+orders = {}
+order_id = 1
+total_money = 0
 
-# ================== KLAVIATURALAR ==================
-def main_menu():
+
+def user_menu():
     return ReplyKeyboardMarkup(
-        [
-            ["🛒 Ovqat zakaz qilish"],
-            ["📦 Buyurtmalar", "📍 Manzil"],
-            ["📊 Statistika", "☎️ Qo‘llab-quvvatlash"]
-        ],
+        [["🍽 Buyurtma berish"], ["📞 Qo‘llab-quvvatlash"]],
         resize_keyboard=True
     )
 
+
 def food_menu():
-    buttons = [[item] for item in MENU.keys()]
-    buttons.append(["⬅️ Orqaga"])
-    return ReplyKeyboardMarkup(buttons, resize_keyboard=True)
+    kb = [[k] for k in MENU]
+    kb.append(["✅ Tugatish"])
+    return ReplyKeyboardMarkup(kb, resize_keyboard=True)
 
-# ================== /start ==================
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    users[user_id] = {}
-    await update.message.reply_text(
-        "👋 Assalomu alaykum!\nZiyo Food botiga xush kelibsiz 🍽",
-        reply_markup=main_menu()
-    )
+    uid = update.effective_user.id
+    if uid == ADMIN_ID:
+        await update.message.reply_text("👮 Admin panel", reply_markup=user_menu())
+    else:
+        await update.message.reply_text("🍔 Ziyo Food botiga xush kelibsiz!", reply_markup=user_menu())
 
-# ================== XABARLAR ==================
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
+
+# ---------- USER FLOW ----------
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global order_id
+    uid = update.effective_user.id
     text = update.message.text
 
-    if user_id not in users:
-        users[user_id] = {}
-
-    # ---- OVQAT ZAKAZ ----
-    if text == "🛒 Ovqat zakaz qilish":
-        users[user_id]["cart"] = []
-        await update.message.reply_text(
-            "🍽 Ovqat tanlang:",
-            reply_markup=food_menu()
-        )
+    if text == "🍽 Buyurtma berish":
+        users[uid] = {"items": [], "sum": 0}
+        await update.message.reply_text("🍽 Menyudan tanlang:", reply_markup=food_menu())
         return
 
     if text in MENU:
-        users[user_id]["current"] = text
-        await update.message.reply_text("Nechta olasiz? (son yozing)")
+        users[uid]["items"].append(text)
+        users[uid]["sum"] += MENU[text]
+        await update.message.reply_text(
+            f"➕ {text} qo‘shildi\n💰 Jami: {users[uid]['sum']} so‘m"
+        )
         return
 
-    if text.isdigit() and "current" in users[user_id]:
-        item = users[user_id]["current"]
-        qty = int(text)
-        users[user_id]["cart"].append((item, qty))
-        del users[user_id]["current"]
-
+    if text == "✅ Tugatish":
         await update.message.reply_text(
-            "✅ Qo‘shildi.\nYana tanlaysizmi yoki davom etamizmi?",
+            "📍 Lokatsiyani yuboring:",
             reply_markup=ReplyKeyboardMarkup(
-                [["➕ Yana tanlash", "➡️ Davom etish"]],
+                [[KeyboardButton("📍 Lokatsiya yuborish", request_location=True)]],
                 resize_keyboard=True
             )
         )
         return
 
-    if text == "➕ Yana tanlash":
-        await update.message.reply_text("🍽 Tanlang:", reply_markup=food_menu())
+    if text == "📞 Qo‘llab-quvvatlash":
+        await update.message.reply_text("☎️ Admin bilan bog‘laning")
         return
 
-    if text == "➡️ Davom etish":
-        await update.message.reply_text(
-            "📞 Telefon raqamingizni yuboring:",
-            reply_markup=ReplyKeyboardMarkup(
-                [[KeyboardButton("📱 Raqamni yuborish", request_contact=True)]],
-                resize_keyboard=True
-            )
-        )
-        return
 
-    # ---- ORQAGA ----
-    if text == "⬅️ Orqaga":
-        await update.message.reply_text("🏠 Bosh menyu", reply_markup=main_menu())
-        return
-
-    # ---- BUYURTMALAR ----
-    if text == "📦 Buyurtmalar":
-        if not orders:
-            await update.message.reply_text("📦 Buyurtmalar yo‘q")
-            return
-
-        msg = "📦 Buyurtmalar:\n\n"
-        for o in orders:
-            msg += f"👤 {o['name']} | {o['phone']}\n"
-            for i, q in o["items"]:
-                msg += f"- {i} x{q}\n"
-            msg += "— — — —\n"
-
-        await update.message.reply_text(msg)
-        return
-
-    # ---- MANZIL ----
-    if text == "📍 Manzil":
-        await update.message.reply_text(
-            "📍 Manzilingizni yuboring:",
-            reply_markup=ReplyKeyboardMarkup(
-                [[KeyboardButton("📍 Lokatsiyani yuborish", request_location=True)]],
-                resize_keyboard=True
-            )
-        )
-        return
-
-    # ---- STATISTIKA (ADMIN) ----
-    if text == "📊 Statistika":
-        if user_id != ADMIN_ID:
-            await update.message.reply_text("⛔️ Siz admin emassiz")
-            return
-
-        await update.message.reply_text(
-            f"📊 Statistika:\n"
-            f"👥 Foydalanuvchilar: {len(users)}\n"
-            f"📦 Buyurtmalar: {len(orders)}"
-        )
-        return
-
-    # ---- QO‘LLAB-QUVVATLASH ----
-    if text == "☎️ Qo‘llab-quvvatlash":
-        await update.message.reply_text(
-            "☎️ Qo‘llab-quvvatlash:\nAdmin bilan bog‘laning:\n@admin"
-        )
-        return
-
-# ================== CONTACT ==================
-async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    phone = update.message.contact.phone_number
-    users[user_id]["phone"] = phone
-
-    await update.message.reply_text(
-        "📍 Endi lokatsiyani yuboring:",
-        reply_markup=ReplyKeyboardMarkup(
-            [[KeyboardButton("📍 Lokatsiyani yuborish", request_location=True)]],
-            resize_keyboard=True
-        )
-    )
-
-# ================== LOCATION ==================
-async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
+async def location_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global order_id, total_money
+    uid = update.effective_user.id
     loc = update.message.location
 
-    order = {
-        "name": update.effective_user.full_name,
-        "phone": users[user_id]["phone"],
-        "items": users[user_id]["cart"],
+    orders[order_id] = {
+        "user": uid,
+        "items": users[uid]["items"],
+        "sum": users[uid]["sum"],
         "lat": loc.latitude,
-        "lon": loc.longitude
+        "lon": loc.longitude,
+        "status": "Qabul qilindi"
     }
 
-    orders.append(order)
+    total_money += users[uid]["sum"]
 
-    # ADMIN GA YUBORAMIZ
-    msg = "🆕 YANGI BUYURTMA\n"
-    msg += f"👤 {order['name']}\n📞 {order['phone']}\n"
-    for i, q in order["items"]:
-        msg += f"- {i} x{q}\n"
-    msg += f"📍 https://maps.google.com/?q={order['lat']},{order['lon']}"
-
-    await context.bot.send_message(chat_id=ADMIN_ID, text=msg)
-
-    await update.message.reply_text(
-        "✅ Buyurtma qabul qilindi!\nTez orada bog‘lanamiz 😊",
-        reply_markup=main_menu()
+    kb = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("🟡 Tayyorlanmoqda", callback_data=f"prep_{order_id}"),
+                InlineKeyboardButton("🚚 Yo‘lda", callback_data=f"way_{order_id}")
+            ],
+            [
+                InlineKeyboardButton("✅ Yetkazildi", callback_data=f"done_{order_id}")
+            ],
+            [
+                InlineKeyboardButton("📍 Xarita", url=f"https://maps.google.com/?q={loc.latitude},{loc.longitude}")
+            ]
+        ]
     )
 
-# ================== RUN ==================
+    msg = (
+        f"🆕 BUYURTMA #{order_id}\n\n"
+        f"🍽 {', '.join(users[uid]['items'])}\n"
+        f"💰 {users[uid]['sum']} so‘m\n"
+        f"📍 Lokatsiya yuborildi"
+    )
+
+    await context.bot.send_message(ADMIN_ID, msg, reply_markup=kb)
+    await update.message.reply_text("✅ Buyurtma qabul qilindi!", reply_markup=user_menu())
+
+    order_id += 1
+
+
+# ---------- ADMIN CALLBACK ----------
+async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    action, oid = query.data.split("_")
+    oid = int(oid)
+
+    if oid not in orders:
+        return
+
+    if action == "prep":
+        orders[oid]["status"] = "Tayyorlanmoqda"
+    elif action == "way":
+        orders[oid]["status"] = "Yo‘lda"
+    elif action == "done":
+        orders[oid]["status"] = "Yetkazildi"
+
+    await context.bot.send_message(
+        orders[oid]["user"],
+        f"📦 Buyurtma #{oid}\nHolati: {orders[oid]['status']}"
+    )
+
+
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.CONTACT, handle_contact))
-    app.add_handler(MessageHandler(filters.LOCATION, handle_location))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(MessageHandler(filters.TEXT, handle_text))
+    app.add_handler(MessageHandler(filters.LOCATION, location_handler))
+    app.add_handler(CallbackQueryHandler(callback_handler))
 
     app.run_polling()
+
 
 if __name__ == "__main__":
     main()
